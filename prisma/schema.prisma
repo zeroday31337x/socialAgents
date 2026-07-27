@@ -7,59 +7,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum CampaignStatus {
-  DRAFT
-  ACTIVE
-  PAUSED
-  ARCHIVED
-}
-
-enum PostStatus {
-  DRAFT
-  AWAITING_APPROVAL
-  SCHEDULED
-  PUBLISHING
-  PUBLISHED
-  FAILED
-  CANCELLED
-}
-
-enum Platform {
-  FACEBOOK
-  INSTAGRAM
-  TIKTOK
-  REDDIT
-  LINKEDIN
-  GITHUB
-}
-
-enum ApprovalMode {
-  DRAFT_ONLY
-  APPROVE_EACH
-  CAMPAIGN_APPROVED
-  AUTOPILOT
-}
+enum CampaignStatus { DRAFT ACTIVE PAUSED ARCHIVED }
+enum PostStatus { DRAFT AWAITING_APPROVAL SCHEDULED PUBLISHING PUBLISHED FAILED CANCELLED }
+enum Platform { FACEBOOK INSTAGRAM TIKTOK REDDIT LINKEDIN GITHUB }
+enum ApprovalMode { DRAFT_ONLY APPROVE_EACH CAMPAIGN_APPROVED AUTOPILOT }
+enum MessageRole { USER ASSISTANT SYSTEM TOOL }
+enum ConnectionStatus { PENDING ACTIVE EXPIRED REVOKED ERROR }
 
 model User {
-  id        String       @id @default(cuid())
-  email     String       @unique
-  name      String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  memberships Membership[]
+  id             String       @id @default(cuid())
+  externalAuthId String?      @unique
+  email          String       @unique
+  name           String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  memberships    Membership[]
+  messages       AgentMessage[]
 }
 
 model Organization {
-  id          String             @id @default(cuid())
-  name        String
-  slug        String             @unique
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  memberships Membership[]
-  brands      BrandProfile[]
-  campaigns   Campaign[]
-  posts       ScheduledPost[]
-  usage       UsageLedger[]
+  id               String             @id @default(cuid())
+  name             String
+  slug             String             @unique
+  plan             String             @default("STARTER")
+  dailyPostLimit   Int                @default(10)
+  subscriptionEnds DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  memberships      Membership[]
+  brands           BrandProfile[]
+  campaigns        Campaign[]
+  posts            ScheduledPost[]
+  usage            UsageLedger[]
+  conversations    AgentConversation[]
+  connections      SocialConnection[]
 }
 
 model Membership {
@@ -69,7 +50,6 @@ model Membership {
   role           String       @default("OWNER")
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
   @@unique([userId, organizationId])
 }
 
@@ -89,22 +69,25 @@ model BrandProfile {
 }
 
 model Campaign {
-  id             String         @id @default(cuid())
-  organizationId String
-  brandId        String
-  name           String
-  objective      String
-  instructions   String
-  status         CampaignStatus @default(DRAFT)
-  approvalMode   ApprovalMode   @default(APPROVE_EACH)
-  timezone       String         @default("America/Toronto")
+  id              String         @id @default(cuid())
+  organizationId  String
+  brandId         String
+  name            String
+  objective       String
+  instructions    String
+  status          CampaignStatus @default(DRAFT)
+  approvalMode    ApprovalMode   @default(APPROVE_EACH)
+  timezone        String         @default("America/Toronto")
   intervalMinutes Int?
-  platforms      Platform[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  brand          BrandProfile   @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  posts          ScheduledPost[]
+  platforms       Platform[]
+  nextRunAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brand           BrandProfile   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  posts           ScheduledPost[]
+  conversations   AgentConversation[]
+  @@index([status, nextRunAt])
 }
 
 model ScheduledPost {
@@ -116,9 +99,12 @@ model ScheduledPost {
   body           String
   scheduledFor   DateTime?
   publishedAt    DateTime?
+  approvedAt     DateTime?
   externalId     String?
   errorCode      String?
   errorMessage   String?
+  attemptCount   Int          @default(0)
+  leaseUntil     DateTime?
   idempotencyKey String       @unique
   modelProvider  String?
   modelName      String?
@@ -128,9 +114,51 @@ model ScheduledPost {
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   campaign       Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
   @@index([status, scheduledFor])
   @@index([campaignId, createdAt])
+}
+
+model AgentConversation {
+  id             String         @id @default(cuid())
+  organizationId String
+  campaignId     String?
+  title          String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign       Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  messages       AgentMessage[]
+  @@index([organizationId, updatedAt])
+}
+
+model AgentMessage {
+  id             String            @id @default(cuid())
+  conversationId String
+  userId         String?
+  role           MessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([conversationId, createdAt])
+}
+
+model SocialConnection {
+  id                String           @id @default(cuid())
+  organizationId    String
+  platform          Platform
+  accountExternalId String
+  accountName       String
+  status            ConnectionStatus @default(PENDING)
+  encryptedToken    String?
+  refreshToken      String?
+  tokenExpiresAt    DateTime?
+  metadata          Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, platform, accountExternalId])
 }
 
 model UsageLedger {
@@ -141,6 +169,5 @@ model UsageLedger {
   metadata       Json?
   createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
   @@index([organizationId, createdAt])
 }
