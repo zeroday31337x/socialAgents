@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum PostStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  REDDIT
+  LINKEDIN
+  GITHUB
+}
+
+enum ApprovalMode {
+  DRAFT_ONLY
+  APPROVE_EACH
+  CAMPAIGN_APPROVED
+  AUTOPILOT
+}
+
+model User {
+  id        String       @id @default(cuid())
+  email     String       @unique
+  name      String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  memberships Membership[]
+}
+
+model Organization {
+  id          String             @id @default(cuid())
+  name        String
+  slug        String             @unique
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  memberships Membership[]
+  brands      BrandProfile[]
+  campaigns   Campaign[]
+  posts       ScheduledPost[]
+  usage       UsageLedger[]
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String       @default("OWNER")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+}
+
+model BrandProfile {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String
+  voice          String?
+  audience       String?
+  prohibited     String?
+  sourceUrls     String[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns      Campaign[]
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  organizationId String
+  brandId        String
+  name           String
+  objective      String
+  instructions   String
+  status         CampaignStatus @default(DRAFT)
+  approvalMode   ApprovalMode   @default(APPROVE_EACH)
+  timezone       String         @default("America/Toronto")
+  intervalMinutes Int?
+  platforms      Platform[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brand          BrandProfile   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  posts          ScheduledPost[]
+}
+
+model ScheduledPost {
+  id             String       @id @default(cuid())
+  organizationId String
+  campaignId     String
+  platform       Platform
+  status         PostStatus   @default(DRAFT)
+  body           String
+  scheduledFor   DateTime?
+  publishedAt    DateTime?
+  externalId     String?
+  errorCode      String?
+  errorMessage   String?
+  idempotencyKey String       @unique
+  modelProvider  String?
+  modelName      String?
+  inputTokens    Int?
+  outputTokens   Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign       Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledFor])
+  @@index([campaignId, createdAt])
+}
+
+model UsageLedger {
+  id             String       @id @default(cuid())
+  organizationId String
+  kind           String
+  quantity       Int          @default(1)
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
