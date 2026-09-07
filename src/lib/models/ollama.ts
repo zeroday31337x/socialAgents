@@ -4,14 +4,17 @@ export class OllamaProvider implements ModelProvider {
   readonly name = 'ollama' as const;
 
   constructor(
-    private readonly baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
-    private readonly model = process.env.OLLAMA_MODEL ?? 'qwen3:8b'
+    private readonly baseUrl = (process.env.OLLAMA_GATEWAY_URL ?? process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434').replace(/\/+$/, ''),
+    private readonly model = process.env.OLLAMA_MODEL ?? 'qwen3:30b-a3b-instruct-2507-q4_K_M'
   ) {}
 
   async isHealthy(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/api/tags`, {
-        signal: AbortSignal.timeout(2_500)
+        headers: process.env.OLLAMA_GATEWAY_SECRET
+          ? { authorization: `Bearer ${process.env.OLLAMA_GATEWAY_SECRET}` }
+          : {},
+        signal: AbortSignal.timeout(10_000)
       });
       return response.ok;
     } catch {
@@ -23,11 +26,17 @@ export class OllamaProvider implements ModelProvider {
     const started = Date.now();
     const response = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(45_000),
+      headers: {
+        'content-type': 'application/json',
+        ...(process.env.OLLAMA_GATEWAY_SECRET
+          ? { authorization: `Bearer ${process.env.OLLAMA_GATEWAY_SECRET}` }
+          : {})
+      },
+      signal: AbortSignal.timeout(180_000),
       body: JSON.stringify({
         model: this.model,
         stream: false,
+        keep_alive: '1h',
         messages: [
           { role: 'system', content: request.system },
           { role: 'user', content: request.prompt }
