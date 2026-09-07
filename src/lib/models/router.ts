@@ -10,9 +10,11 @@ type RouterHealth = {
 
 export class ModelRouter {
   private readonly ollama = new OllamaProvider();
-  private readonly openai = process.env.OPENAI_API_KEY
-    ? new OpenAIProvider()
-    : null;
+  private readonly openai =
+    process.env.OPENAI_API_KEY &&
+    String(process.env.ALLOW_PAID_AI_FALLBACK || 'false').toLowerCase() === 'true'
+      ? new OpenAIProvider()
+      : null;
 
   async generate(
     request: ModelRequest,
@@ -20,7 +22,7 @@ export class ModelRouter {
   ): Promise<ModelResponse> {
     const localEnabled = process.env.MODEL_LOCAL_ENABLED !== 'false';
     const maxQueue = Number(process.env.MODEL_LOCAL_MAX_QUEUE ?? 4);
-    const maxLatency = Number(process.env.MODEL_LOCAL_MAX_LATENCY_MS ?? 12_000);
+    const maxLatency = Number(process.env.MODEL_LOCAL_MAX_LATENCY_MS ?? 180_000);
     const maxCpu = Number(process.env.MODEL_LOCAL_MAX_CPU_PERCENT ?? 70);
 
     const localEligible =
