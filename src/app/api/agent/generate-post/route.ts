@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { generatePost } from '@/lib/agent/generate-post';
+import { authError, requireContext } from '@/lib/auth/context';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
+    await requireContext();
     const body = await request.json();
     const result = await generatePost(body);
     return NextResponse.json(result);
@@ -17,10 +19,11 @@ export async function POST(request: Request) {
       );
     }
 
+    if (authError(error)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     console.error('Post generation failed', error);
-    return NextResponse.json(
-      { error: 'Post generation failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Post generation failed' }, { status: 500 });
   }
 }
