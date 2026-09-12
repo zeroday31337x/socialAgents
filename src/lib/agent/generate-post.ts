@@ -7,7 +7,7 @@ export const GeneratePostInput = z.object({
   brandVoice: z.string().optional(),
   campaignObjective: z.string().min(1),
   campaignInstructions: z.string().min(1),
-  platform: z.enum(['FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'REDDIT', 'LINKEDIN']),
+  platform: z.enum(['FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'REDDIT', 'LINKEDIN', 'GITHUB']),
   recentPosts: z.array(z.string()).max(30).default([])
 });
 
